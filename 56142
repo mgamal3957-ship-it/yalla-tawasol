@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>دردشة</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial}
+body{background:#00c853}
+#loginScreen{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;padding:20px}
+#loginScreen h1{color:white;font-size:40px;margin-bottom:20px}
+#loginScreen input{width:90%;max-width:350px;padding:15px;border:none;border-radius:15px;text-align:center;font-size:18px;outline:none}
+#loginScreen button{width:90%;max-width:350px;padding:15px;background:#004d40;color:white;border:none;border-radius:15px;font-size:18px;font-weight:bold;cursor:pointer}
+#mainScreen{display:none;height:100vh;flex-direction:column;background:white}
+.topbar{background:#00c853;color:white;padding:15px;display:flex;justify-content:space-between;align-items:center}
+.topbar button{background:rgba(255,255,255,0.2);border:none;color:white;padding:8px 12px;border-radius:10px;cursor:pointer;font-size:18px;position:relative}
+#mailDot{position:absolute;top:2px;left:2px;width:10px;height:10px;background:yellow;border-radius:50%;display:none}
+.search{padding:10px;display:flex;gap:5px}
+.search input{flex:1;padding:12px;border:1px solid #ddd;border-radius:10px}
+.search button{background:#00c853;color:white;border:none;padding:0 20px;border-radius:10px}
+#friendsList{flex:1;overflow-y:auto}
+.friend{display:flex;justify-content:space-between;align-items:center;padding:15px;border-bottom:1px solid #eee}
+.friend button{background:#00c853;color:white;border:none;padding:8px 15px;border-radius:15px}
+.add-btn{background:#00c853 !important;font-size:20px !important;width:35px;height:35px;border-radius:50% !important}
+#chatScreen{display:none;height:100vh;flex-direction:column;background:#e5ddd5}
+.chat-top{background:#00c853;color:white;padding:15px;display:flex;gap:10px;align-items:center}
+.chat-top button{background:none;border:none;color:white;font-size:20px}
+#messages{flex:1;padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.msg{background:white;padding:10px;border-radius:10px;max-width:80%;align-self:flex-start}
+.msg.me{background:#dcf8c6;align-self:flex-end}
+.msg small{display:block;font-size:10px;color:#888;margin-top:5px}
+.chat-input{display:flex;padding:10px;background:white;gap:5px}
+.chat-input input{flex:1;padding:12px;border:1px solid #ddd;border-radius:20px;outline:none}
+.chat-input button{background:#00c853;color:white;border:none;padding:0 20px;border-radius:20px}
+.popup{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;z-index:99}
+.popup-box{background:white;margin:60px 15px;padding:20px;border-radius:15px;max-height:80vh;overflow-y:auto}
+.popup-box button{padding:10px 15px;border:none;border-radius:10px;color:white;margin:5px;cursor:pointer}
+.req-card{border:1px solid #eee;padding:15px;border-radius:10px;margin-bottom:10px;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+<h1>دردشة</h1>
+<input id="phoneInput" type="text" placeholder="رقمك - 8 ارقام او اكتر">
+<input id="nameInput" type="text" placeholder="اسمك">
+<input id="passInput" type="password" placeholder="كلمة السر">
+<button onclick="login()">دخول / انشاء حساب</button>
+<p style="color:white;font-size:13px;text-align:center">لو اول مرة ليك، هنعملك حساب جديد بالباسورد ده<br>لو مسجل قبل كده، اكتب نفس الباسورد عشان تدخل</p>
+<p id="loginError" style="color:white;font-weight:bold;text-align:center"></p>
+</div>
+
+<div id="mainScreen">
+<div class="topbar"><button onclick="openSettings()">⚙️</button><b>دردشة</b><button onclick="openRequests()">📩<span id="mailDot"></span></button></div>
+<div class="search"><input id="searchInput" placeholder="دور بالاسم او الرقم" oninput="renderFriends(this.value)"><button onclick="searchFriend()">🔍</button></div>
+<div id="friendsList"></div>
+</div>
+
+<div id="chatScreen">
+<div class="chat-top"><button onclick="backToList()">⬅</button><b id="chatWithName"></b></div>
+<div id="messages"></div>
+<div class="chat-input"><input id="msgInput" placeholder="اكتب رسالة..."><button onclick="sendMessage()">➤</button></div>
+</div>
+
+<div id="requestsBox" class="popup"><div class="popup-box"><h3 style="text-align:center">طلبات الصداقة</h3><div id="requestsList"></div><button onclick="closeRequests()" style="background:#888;width:100%">إغلاق</button></div></div>
+<div id="settingsBox" class="popup"><div class="popup-box" style="text-align:center"><h3>إعداداتي</h3><p style="margin:15px">رقمك: <b id="myNumber"></b></p><p style="margin:15px">اسمك: <b id="myName"></b></p><p style="margin:15px">كلمة السر: <b id="myPass"></b> <span onclick="togglePass()" style="cursor:pointer">👁️</span></p><button onclick="logout()" style="background:#ff3b30">تسجيل خروج</button><button onclick="closeSettings()" style="background:#888">إغلاق</button></div></div>
+
+<script>
+const firebaseConfig = {apiKey:"AIzaSyACJf3cjgRiGaNc0mF5f94j5tWzknU8of0",authDomain:"yalla-tawasol.firebaseapp.com",projectId:"yalla-tawasol",storageBucket:"yalla-tawasol.firebasestorage.app",messagingSenderId:"953556717098",appId:"1:953556717098:web:9ccab4d3849cf1eb467d53"};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+let myPhone = localStorage.getItem("myPhone")||"";
+let myName = localStorage.getItem("myName")||"";
+let myId = localStorage.getItem("myId")||"";
+let myPass = localStorage.getItem("myPass")||"";
+let friends=[]; let currentChat=""; let currentChatName=""; let unMsg=null; let unReq=null; let unFri=null;
+function getId(phone,name){return phone+"_"+name;}
+function getChatId(a,b){return [a,b].sort().join("__");}
+function startListeners(){
+ if(unReq)unReq(); unReq=db.collection("friendRequests").where("toId","==",myId).onSnapshot(s=>{let d=document.getElementById("mailDot"); if(d)d.style.display=s.empty?"none":"block"; let rb=document.getElementById("requestsBox"); if(rb&&rb.style.display!=="none") renderRequests(s);});
+ if(unFri)unFri(); unFri=db.collection("users").doc(myId).collection("friends").onSnapshot(s=>{friends=s.docs.map(d=>d.data()); let inp=document.getElementById("searchInput"); renderFriends(inp?inp.value:"");});
+}
+async function login(){
+ let phone=document.getElementById("phoneInput").value.trim();
+ let name=document.getElementById("nameInput").value.trim();
+ let pass=document.getElementById("passInput").value.trim();
+ let err=document.getElementById("loginError");
+ if(phone.length<8){err.innerText="الرقم لازم يكون 8 ارقام على الاقل"; return;}
+ if(!/^
